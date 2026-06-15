@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Decision Arena</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand-row">
+          <div class="brand">
+            <span class="brand-mark"></span>
+            <span>Decision Arena</span>
+          </div>
+          <button class="icon-button" id="collapseSidebar" title="折叠侧栏">≡</button>
+        </div>
+
+        <div class="sidebar-tools">
+          <button class="new-chat" id="newChat">⊕ 开启新对话</button>
+          <label class="search-box">
+            <span>⌕</span>
+            <input id="searchInput" placeholder="搜索对话" />
+          </label>
+        </div>
+
+        <nav class="conversation-list" id="conversationList"></nav>
+
+        <div class="account">
+          <div class="avatar">D</div>
+          <div>
+            <strong>local user</strong>
+            <span>key 保存在后端</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="mobile-bar">
+          <button class="icon-button" id="openSidebar" title="打开侧栏">≡</button>
+          <span>Decision Arena</span>
+        </header>
+
+        <section class="chat" id="chat">
+          <div class="welcome" id="welcome">
+            <div class="welcome-mark"></div>
+            <h1>使用快速模式开始决策</h1>
+            <div class="mode-tabs" role="tablist" aria-label="对话模式">
+              <button class="mode-tab active" data-mode="quick">快速模式</button>
+              <button class="mode-tab" data-mode="expert">专家模式</button>
+              <button class="mode-tab" data-mode="vision">识图模式</button>
+            </div>
+          </div>
+
+          <div class="messages" id="messages"></div>
+        </section>
+
+        <form class="composer" id="composer">
+          <textarea id="promptInput" rows="1" placeholder="给 Decision Arena 发送消息"></textarea>
+          <div class="composer-footer">
+            <div class="composer-actions">
+              <button type="button" class="chip" data-mode-shortcut="expert">深度思考</button>
+              <button type="button" class="chip" data-mode-shortcut="quick">智能搜索</button>
+            </div>
+            <button class="send-button" id="sendButton" type="submit" title="发送">↑</button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
