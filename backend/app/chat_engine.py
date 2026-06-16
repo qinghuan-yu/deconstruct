@@ -1,7 +1,12 @@
 import asyncio
 import contextlib
+import re
 
+from .debate_engine import DebateEngine
 from .providers import OpenAICompatibleProvider
+
+
+DEFAULT_TITLES = {"New conversation", "新的决策对话", "新对话", "Untitled"}
 
 
 class ChatJob:
@@ -18,6 +23,7 @@ class ChatEngine:
         self.provider = provider or OpenAICompatibleProvider()
 
     async def submit_user_message(self, conversation_id, content, mode="quick"):
+        await self._rename_default_conversation(conversation_id, content)
         user_message = await self.store.add_message(conversation_id, "user", content, "complete")
         await self.store.add_event(
             conversation_id,
@@ -47,6 +53,14 @@ class ChatEngine:
                 for item in history
                 if item["role"] in {"user", "assistant"} and item["id"] != assistant_message_id
             ]
+            if mode == "expert":
+                await DebateEngine(self.store, self.provider).run(
+                    conversation_id=conversation_id,
+                    assistant_message_id=assistant_message_id,
+                    history=prompt_history,
+                )
+                return
+
             async for chunk in self.provider.stream_reply(prompt_history, mode):
                 await self.store.append_message(assistant_message_id, chunk)
                 await self.store.add_event(
@@ -72,3 +86,22 @@ class ChatEngine:
                     message_id=assistant_message_id,
                 )
             raise
+
+    async def _rename_default_conversation(self, conversation_id, content):
+        conversation = await self.store.get_conversation(conversation_id)
+        if not conversation or conversation["title"] not in DEFAULT_TITLES:
+            return
+        title = self._title_from_content(content)
+        if title:
+            await self.store.update_conversation_title(conversation_id, title)
+            await self.store.add_event(
+                conversation_id,
+                "conversation_renamed",
+                {"title": title},
+            )
+
+    def _title_from_content(self, content):
+        text = re.sub(r"\s+", " ", content).strip()
+        text = re.split(r"[。！？!?；;\n]", text, maxsplit=1)[0].strip()
+        text = text.strip(" ，,：:、-—")
+        return text[:15].strip(" ，,：:、-—") or "新的决策对话"

@@ -88,6 +88,34 @@ class ConversationStore:
             ).fetchone()
         return dict(row) if row else None
 
+    async def delete_conversation(self, conversation_id):
+        return await asyncio.to_thread(self._delete_conversation_sync, conversation_id)
+
+    def _delete_conversation_sync(self, conversation_id):
+        with self._lock, closing(self._connect()) as conn, conn:
+            row = conn.execute(
+                "select id from conversations where id = ?",
+                (conversation_id,),
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute("delete from events where conversation_id = ?", (conversation_id,))
+            conn.execute("delete from messages where conversation_id = ?", (conversation_id,))
+            conn.execute("delete from conversations where id = ?", (conversation_id,))
+        return True
+
+    async def update_conversation_title(self, conversation_id, title):
+        return await asyncio.to_thread(self._update_conversation_title_sync, conversation_id, title)
+
+    def _update_conversation_title_sync(self, conversation_id, title):
+        now = time.time()
+        with self._lock, closing(self._connect()) as conn, conn:
+            cur = conn.execute(
+                "update conversations set title = ?, updated_at = ? where id = ?",
+                (title, now, conversation_id),
+            )
+        return cur.rowcount > 0
+
     async def add_message(self, conversation_id, role, content, status="complete"):
         return await asyncio.to_thread(self._add_message_sync, conversation_id, role, content, status)
 

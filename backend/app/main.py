@@ -2,14 +2,17 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import os
+from urllib.parse import parse_qs
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat_engine import ChatEngine
+from .providers import OpenAICompatibleProvider
+from .settings import ModelSettings
 from .store import ConversationStore
 
 
@@ -18,7 +21,8 @@ DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 store = ConversationStore(DATA_DIR / "chat.sqlite3")
-engine = ChatEngine(store)
+model_settings = ModelSettings(DATA_DIR)
+engine = ChatEngine(store, provider=OpenAICompatibleProvider(model_settings))
 
 
 @asynccontextmanager
@@ -39,9 +43,37 @@ class SendMessageRequest(BaseModel):
     mode: str = "quick"
 
 
+class ModelSettingsRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = "https://api.deepseek.com"
+    model: str = "deepseek-chat"
+
+
 @app.get("/api/health")
 async def health():
     return {"ok": True}
+
+
+@app.get("/api/settings/model")
+async def get_model_settings():
+    return await model_settings.read_public()
+
+
+@app.post("/api/settings/model")
+async def save_model_settings(payload: ModelSettingsRequest):
+    return await model_settings.save(payload.api_key, payload.base_url, payload.model)
+
+
+@app.post("/settings/model-form")
+async def save_model_settings_form(request: Request):
+    body = (await request.body()).decode("utf-8")
+    form = {key: values[-1] for key, values in parse_qs(body).items()}
+    await model_settings.save(
+        form.get("api_key", ""),
+        form.get("base_url", "https://api.deepseek.com"),
+        form.get("model", "deepseek-chat"),
+    )
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/api/conversations")
@@ -61,6 +93,14 @@ async def get_conversation(conversation_id: str):
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"conversation": conversation, "messages": await store.list_messages(conversation_id)}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    deleted = await store.delete_conversation(conversation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"deleted": True}
 
 
 @app.post("/api/conversations/{conversation_id}/messages")
