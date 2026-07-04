@@ -5,12 +5,13 @@ import os
 from urllib.parse import parse_qs
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .chat_engine import ChatEngine
+from .document_parser import DocumentParseError, extract_document_text
 from .providers import OpenAICompatibleProvider
 from .settings import ModelSettings
 from .store import ConversationStore
@@ -109,6 +110,15 @@ async def send_message(conversation_id: str, payload: SendMessageRequest):
         raise HTTPException(status_code=404, detail="Conversation not found")
     await engine.submit_user_message(conversation_id, payload.content, payload.mode)
     return {"accepted": True}
+
+
+@app.post("/api/documents/parse")
+async def parse_document(file: UploadFile = File(...)):
+    content = await file.read()
+    try:
+        return extract_document_text(file.filename or "document", content)
+    except DocumentParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/conversations/{conversation_id}/events")

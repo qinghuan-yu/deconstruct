@@ -77,6 +77,36 @@ class DebateEngineTest(unittest.TestCase):
 
         asyncio.run(scenario())
 
+    def test_expert_follow_up_includes_previous_conversation_context(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as directory:
+                store = ConversationStore(Path(directory) / "chat.sqlite3")
+                await store.init()
+                provider = RecordingProvider()
+                engine = ChatEngine(store=store, provider=provider)
+
+                conversation = await store.create_conversation("Decision Arena")
+                await store.add_message(conversation["id"], "user", "Should I deploy the advisor?", "complete")
+                await store.add_message(
+                    conversation["id"],
+                    "assistant",
+                    "Initial recommendation: deploy only after budget and user constraints are clarified.",
+                    "complete",
+                )
+
+                job = await engine.submit_user_message(
+                    conversation_id=conversation["id"],
+                    content="The budget is 200 dollars and I need it this week.",
+                    mode="expert",
+                )
+                await job.wait()
+
+                first_prompt = provider.calls[0]["messages"][0]["content"]
+                self.assertIn("Initial recommendation", first_prompt)
+                self.assertIn("budget is 200 dollars", first_prompt)
+
+        asyncio.run(scenario())
+
 
 if __name__ == "__main__":
     unittest.main()

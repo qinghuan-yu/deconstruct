@@ -25,6 +25,7 @@ class DebateEngine:
 
     async def run(self, conversation_id, assistant_message_id, history):
         user_question = self._latest_user_question(history)
+        conversation_context = self._format_conversation_context(history)
 
         clarification = await self._run_step(
             conversation_id,
@@ -35,7 +36,8 @@ class DebateEngine:
             prompt=(
                 "把用户的决策问题改写成结构化格式：目标、候选方案、约束、评价维度、"
                 "缺失信息。不要直接给最终建议。\n\n"
-                f"用户问题：{user_question}"
+                f"对话上下文：\n{conversation_context}\n\n"
+                f"用户最新补充：{user_question}"
             ),
         )
 
@@ -50,8 +52,8 @@ class DebateEngine:
                 mode=f"agent.{agent.key}",
                 prompt=(
                     f"你是{agent.title}。你的任务：{agent.mission}\n"
-                    "你只能基于原始问题和问题澄清独立分析，暂时不要参考其他 agent。\n\n"
-                    f"原始问题：{user_question}\n\n"
+                    "你只能基于对话上下文和问题澄清独立分析，暂时不要参考其他 agent。\n\n"
+                    f"对话上下文：\n{conversation_context}\n\n"
                     f"问题澄清：{clarification}"
                 ),
             )
@@ -66,6 +68,7 @@ class DebateEngine:
             prompt=(
                 "阅读所有 agent 的独立分析，输出交叉质询：每个视角同意哪里、反驳哪里、"
                 "忽略了什么、如果自己错了最可能错在哪里。\n\n"
+                f"对话上下文：\n{conversation_context}\n\n"
                 f"{self._format_agent_outputs(agent_outputs)}"
             ),
         )
@@ -80,6 +83,7 @@ class DebateEngine:
                 "基于问题澄清、独立分析和交叉质询，输出 Markdown 评分矩阵。"
                 "维度至少包括长期收益、短期成本、机会成本、失败风险、可逆性、"
                 "主线一致性、情绪污染、信息充分度、MVP 可行性。给出权重、分数和简短理由。\n\n"
+                f"对话上下文：\n{conversation_context}\n\n"
                 f"问题澄清：{clarification}\n\n"
                 f"独立分析：\n{self._format_agent_outputs(agent_outputs)}\n\n"
                 f"交叉质询：{cross_examination}"
@@ -95,7 +99,10 @@ class DebateEngine:
             prompt=(
                 "你是裁判 agent。综合前面所有阶段，输出：当前最优建议、置信度、主要理由、"
                 "最大风险、最容易自欺的地方、最小可行动作、止损条件、三天后复盘问题。"
-                "不要只按多数投票，要说明权衡。\n\n"
+                "第一行必须写清楚“最终裁决：执行 / 不执行 / 有条件执行 / 暂缓”，并给出一句话判罚。"
+                "裁决依据必须引用问题澄清、独立分析、交叉质询和评分矩阵中的关键信息，"
+                "不要只按多数投票，也不要只给结果，要说明权衡链条。\n\n"
+                f"对话上下文：\n{conversation_context}\n\n"
                 f"问题澄清：{clarification}\n\n"
                 f"独立分析：\n{self._format_agent_outputs(agent_outputs)}\n\n"
                 f"交叉质询：{cross_examination}\n\n"
@@ -158,6 +165,15 @@ class DebateEngine:
             if message["role"] == "user":
                 return message["content"]
         return ""
+
+    def _format_conversation_context(self, history):
+        lines = []
+        for message in history:
+            role = "User" if message["role"] == "user" else "Assistant"
+            content = message["content"].strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n\n".join(lines) or "No prior context."
 
     def _format_agent_outputs(self, outputs):
         sections = []

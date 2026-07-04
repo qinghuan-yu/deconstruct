@@ -9,6 +9,7 @@
   --accent-soft: #eef3ff;
   --border: #e7eaf0;
   --shadow: 0 24px 70px rgb(45 58 98 / 0.12);
+  --composer-offset: 190px;
   font-family:
     ui-sans-serif,
     -apple-system,
@@ -221,7 +222,8 @@ button {
 .chat {
   min-height: 0;
   overflow: auto;
-  padding: 34px 24px 132px;
+  padding: 34px 24px;
+  padding-bottom: calc(var(--composer-offset) + 34px);
 }
 
 .messages {
@@ -255,14 +257,47 @@ button {
 }
 
 .message.user .bubble {
-  background: var(--accent);
-  color: #ffffff;
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
 }
 
 .message.assistant .bubble {
   border: 1px solid var(--border);
   background: #ffffff;
   box-shadow: 0 10px 30px rgb(42 52 81 / 0.05);
+}
+
+.user-text {
+  max-width: min(720px, 100%);
+  border-radius: 16px;
+  background: var(--accent);
+  color: #ffffff;
+  padding: 14px 16px;
+  white-space: pre-wrap;
+}
+
+.user-attachments {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.user-attachment-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: min(300px, 100%);
+  min-height: 80px;
+  border: 1px solid #dfe3ea;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(30 41 59 / 0.06);
+  padding: 14px 16px;
 }
 
 .stream-caret {
@@ -322,7 +357,9 @@ button {
 
 .final-answer h2,
 .final-answer h3,
-.final-answer h4 {
+.final-answer h4,
+.final-answer h5,
+.final-answer h6 {
   margin: 22px 0 12px;
   line-height: 1.35;
 }
@@ -363,14 +400,140 @@ button {
   bottom: 26px;
   left: max(320px, calc(296px + (100vw - 296px - 860px) / 2));
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: end;
+  gap: 14px;
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 26px;
   background: #ffffff;
   box-shadow: var(--shadow);
-  padding: 14px;
+  padding: 16px;
+}
+
+.attachment-tray {
+  display: none;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.attachment-tray.has-attachments {
+  display: flex;
+}
+
+.attachment-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: min(300px, 100%);
+  min-height: 80px;
+  border: 1px solid #d7dbe3;
+  border-radius: 18px;
+  background: #f3f4f6;
+  padding: 14px 40px 14px 16px;
+}
+
+.attachment-file-icon {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 40px;
+  place-items: center;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #7f96ff, #5c76ee);
+  color: #ffffff;
+}
+
+.attachment-file-icon::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-top: 10px solid #c9d3ff;
+  border-left: 10px solid transparent;
+}
+
+.attachment-file-icon span,
+.attachment-file-icon span::before,
+.attachment-file-icon span::after {
+  display: block;
+  width: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.attachment-file-icon span::before,
+.attachment-file-icon span::after {
+  content: "";
+  margin-top: 5px;
+}
+
+.attachment-meta {
+  min-width: 0;
+}
+
+.attachment-meta strong,
+.attachment-meta span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-meta strong {
+  color: #111827;
+  font-weight: 700;
+}
+
+.attachment-meta span {
+  margin-top: 4px;
+  color: #8b929f;
+  font-size: 14px;
+}
+
+.attachment-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: #737985;
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.upload-button {
+  display: grid;
+  width: 34px;
+  height: 42px;
+  place-items: center;
+  color: #171b22;
+  cursor: pointer;
+}
+
+.upload-button input {
+  display: none;
+}
+
+.paperclip-icon {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
 }
 
 .composer textarea {
@@ -389,12 +552,22 @@ button {
   color: #aeb5c1;
 }
 
+.upload-status {
+  min-height: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .send-button {
-  height: 42px;
-  border-radius: 12px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 999px;
   background: #9fb4ff;
   color: #ffffff;
-  padding: 0 18px;
+  padding: 0;
+  font-size: 24px;
   font-weight: 800;
 }
 
@@ -451,7 +624,8 @@ button {
   }
 
   .chat {
-    padding: 24px 14px 120px;
+    padding: 24px 14px;
+    padding-bottom: calc(var(--composer-offset) + 20px);
   }
 
   .composer {

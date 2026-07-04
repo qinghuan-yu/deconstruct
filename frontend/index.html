@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Decision Arena</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=4" />
+    <link rel="stylesheet" href="/assets/styles.css?v=6" />
   </head>
   <body>
     <div class="shell">
@@ -46,12 +46,22 @@
         </section>
 
         <form class="composer" id="composer">
+          <div class="attachment-tray" id="attachmentTray"></div>
           <textarea id="promptInput" rows="1" placeholder="输入你的决策问题，Enter 发送，Shift + Enter 换行"></textarea>
-          <button class="send-button" id="sendButton" type="submit" title="发送">发送</button>
+          <div class="composer-footer">
+            <label class="upload-button" title="上传 docx、doc、txt、md 文档" aria-label="上传文档">
+              <input id="documentInput" type="file" accept=".docx,.doc,.txt,.md" />
+              <svg class="paperclip-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21.4 11.1 12 20.5a6 6 0 0 1-8.5-8.5l9.7-9.7a4.2 4.2 0 0 1 6 6l-9.8 9.8a2.4 2.4 0 0 1-3.4-3.4l8.7-8.7" />
+              </svg>
+            </label>
+            <button class="send-button" id="sendButton" type="submit" title="发送">↑</button>
+          </div>
+          <div class="upload-status" id="uploadStatus" aria-live="polite"></div>
         </form>
       </main>
     </div>
 
-    <script src="/assets/app.js?v=5"></script>
+    <script src="/assets/app.js?v=6"></script>
   </body>
 </html>

@@ -5,6 +5,7 @@ const state = {
   eventSource: null,
   lastSeq: 0,
   messages: new Map(),
+  attachments: [],
 };
 
 const els = {
@@ -16,6 +17,9 @@ const els = {
   composer: document.getElementById("composer"),
   promptInput: document.getElementById("promptInput"),
   sendButton: document.getElementById("sendButton"),
+  documentInput: document.getElementById("documentInput"),
+  attachmentTray: document.getElementById("attachmentTray"),
+  uploadStatus: document.getElementById("uploadStatus"),
   openSettings: document.getElementById("openSettings"),
   closeSettings: document.getElementById("closeSettings"),
   settingsDialog: document.getElementById("settingsDialog"),
@@ -95,11 +99,11 @@ function renderMarkdown(markdown) {
       continue;
     }
 
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
       flushParagraph();
       closeList();
-      const level = heading[1].length + 1;
+      const level = Math.min(heading[1].length + 1, 6);
       html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
       continue;
     }
@@ -213,6 +217,84 @@ function scrollToBottom() {
   requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
 }
 
+function setComposerOffset() {
+  const composerOffset = (els.composer?.offsetHeight || 150) + 72;
+  document.documentElement.style.setProperty("--composer-offset", `${composerOffset}px`);
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function renderAttachments() {
+  if (!els.attachmentTray) return;
+  els.attachmentTray.innerHTML = "";
+  els.attachmentTray.classList.toggle("has-attachments", state.attachments.length > 0);
+  for (const attachment of state.attachments) {
+    const card = document.createElement("div");
+    card.className = "attachment-card";
+    card.innerHTML = `
+      <div class="attachment-file-icon">
+        <span></span>
+      </div>
+      <div class="attachment-meta">
+        <strong>${escapeHtml(attachment.filename)}</strong>
+        <span>${escapeHtml(attachment.extension.toUpperCase())} ${escapeHtml(formatFileSize(attachment.size))}</span>
+      </div>
+      <button class="attachment-remove" type="button" aria-label="移除 ${escapeHtml(attachment.filename)}">×</button>
+    `;
+    card.querySelector(".attachment-remove").addEventListener("click", () => {
+      state.attachments = state.attachments.filter((item) => item.id !== attachment.id);
+      renderAttachments();
+      els.uploadStatus.textContent = "";
+      els.promptInput.dispatchEvent(new Event("input"));
+    });
+    els.attachmentTray.appendChild(card);
+  }
+  setComposerOffset();
+}
+
+function splitUserContent(content) {
+  const attachments = [];
+  const documentPattern = /\n*\[文档：([^\]\n]+)\]\n(?:（[^\n]+）\n)?[\s\S]*?(?=\n\n\[文档：|$)/g;
+  const text = (content || "")
+    .replace(documentPattern, (_, filename) => {
+      const cleanName = filename.trim();
+      const extension = cleanName.includes(".") ? cleanName.split(".").pop() : "DOC";
+      attachments.push({ filename: cleanName, extension });
+      return "";
+    })
+    .trim();
+  return { text, attachments };
+}
+
+function renderUserAttachmentCard(attachment) {
+  return `
+    <div class="user-attachment-card">
+      <div class="attachment-file-icon"><span></span></div>
+      <div class="attachment-meta">
+        <strong>${escapeHtml(attachment.filename)}</strong>
+        <span>${escapeHtml(attachment.extension.toUpperCase())}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderUserContent(content) {
+  const { text, attachments } = splitUserContent(content || "");
+  const parts = [];
+  if (attachments.length) {
+    parts.push(`<div class="user-attachments">${attachments.map(renderUserAttachmentCard).join("")}</div>`);
+  }
+  if (text) {
+    parts.push(`<div class="user-text">${escapeHtml(text)}</div>`);
+  }
+  return parts.join("") || `<div class="user-text">${escapeHtml(content || "")}</div>`;
+}
+
 function renderMessage(message) {
   let node = state.messages.get(message.id);
   if (!node) {
@@ -231,7 +313,7 @@ function renderMessage(message) {
     bubble.dataset.rawContent = message.content || "";
     bubble.innerHTML = renderAssistantContent(message.content || "", message.status === "streaming");
   } else {
-    bubble.innerHTML = escapeHtml(message.content || "");
+    bubble.innerHTML = renderUserContent(message.content || "");
   }
 }
 
@@ -341,12 +423,15 @@ function handleEvent(raw) {
 
 async function sendPrompt(event) {
   event.preventDefault();
-  const content = els.promptInput.value.trim();
+  const content = buildOutgoingContent();
   if (!content) return;
   if (!state.activeId) {
     await createConversation(content.slice(0, 22));
   }
   els.promptInput.value = "";
+  state.attachments = [];
+  renderAttachments();
+  setComposerOffset();
   els.sendButton.classList.remove("ready");
   els.promptInput.style.height = "auto";
   await request(`/api/conversations/${state.activeId}/messages`, {
@@ -354,6 +439,52 @@ async function sendPrompt(event) {
     body: JSON.stringify({ content, mode: state.activeMode }),
   });
   await loadConversations();
+}
+
+function buildOutgoingContent() {
+  const prompt = els.promptInput.value.trim();
+  const documentBlocks = state.attachments.map((document) =>
+    [
+      `[文档：${document.filename}]`,
+      document.truncated ? "（内容过长，已截取前半部分）" : "",
+      document.text,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  return [prompt, ...documentBlocks].filter(Boolean).join("\n\n");
+}
+
+async function uploadDocument() {
+  const file = els.documentInput.files?.[0];
+  if (!file) return;
+  els.uploadStatus.textContent = `正在解析 ${file.name}...`;
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const response = await fetch("/api/documents/parse", {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error((await response.json()).detail || "文档解析失败");
+    }
+    const document = await response.json();
+    state.attachments.push({
+      ...document,
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      size: file.size,
+    });
+    renderAttachments();
+    els.promptInput.dispatchEvent(new Event("input"));
+    els.uploadStatus.textContent = `已加入文档：${document.filename}`;
+    els.promptInput.focus();
+  } catch (error) {
+    els.uploadStatus.textContent = error.message;
+  } finally {
+    els.documentInput.value = "";
+  }
 }
 
 async function loadSettings() {
@@ -392,10 +523,12 @@ on(els.settingsForm, "submit", saveSettings);
 on(els.newChat, "click", () => createConversation());
 on(els.openSidebar, "click", () => els.sidebar.classList.add("open"));
 on(els.composer, "submit", sendPrompt);
+on(els.documentInput, "change", uploadDocument);
 on(els.promptInput, "input", () => {
-  els.sendButton.classList.toggle("ready", Boolean(els.promptInput.value.trim()));
+  els.sendButton.classList.toggle("ready", Boolean(els.promptInput.value.trim() || state.attachments.length));
   els.promptInput.style.height = "auto";
   els.promptInput.style.height = `${els.promptInput.scrollHeight}px`;
+  setComposerOffset();
 });
 on(els.promptInput, "keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
@@ -405,6 +538,7 @@ on(els.promptInput, "keydown", (event) => {
 });
 
 loadConversations().then(async () => {
+  setComposerOffset();
   const first = state.conversations[0];
   if (first) {
     await selectConversation(first.id);
@@ -412,3 +546,6 @@ loadConversations().then(async () => {
 });
 
 window.renderAssistantContent = renderAssistantContent;
+window.renderMarkdown = renderMarkdown;
+window.renderUserContent = renderUserContent;
+window.addEventListener("resize", setComposerOffset);
