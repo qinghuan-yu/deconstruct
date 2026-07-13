@@ -12,6 +12,7 @@ const els = {
   sidebar: document.getElementById("sidebar"),
   conversationList: document.getElementById("conversationList"),
   newChat: document.getElementById("newChat"),
+  modelSettings: document.getElementById("modelSettings"),
   openSidebar: document.getElementById("openSidebar"),
   messages: document.getElementById("messages"),
   composer: document.getElementById("composer"),
@@ -33,6 +34,24 @@ const els = {
 function on(element, eventName, handler) {
   if (element) {
     element.addEventListener(eventName, handler);
+  }
+}
+
+function setValueIfPresent(element, value) {
+  if (element) {
+    element.value = value;
+  }
+}
+
+function setTextIfPresent(element, value) {
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function setPlaceholderIfPresent(element, value) {
+  if (element) {
+    element.placeholder = value;
   }
 }
 
@@ -128,14 +147,26 @@ function renderMarkdown(markdown) {
 }
 
 function splitAssistantContent(content) {
-  const marker = "## 裁判总结";
-  const index = content.indexOf(marker);
+  const finalMarker = "<!-- FINAL_DECISION -->";
+  const finalMarkerIndex = content.indexOf(finalMarker);
+  if (finalMarkerIndex >= 0) {
+    return {
+      thinking: content.slice(0, finalMarkerIndex).trim(),
+      final: content.slice(finalMarkerIndex + finalMarker.length).trim(),
+    };
+  }
+
+  const markers = ["# 决策书：", "# 决策书:", "# 决策书", "决策书：", "决策书:", "最终裁决：", "## 裁判总结"];
+  const indexes = markers
+    .map((marker) => content.indexOf(marker))
+    .filter((index) => index >= 0);
+  const index = indexes.length ? Math.min(...indexes) : -1;
   if (index === -1) {
     return { thinking: content, final: "" };
   }
   return {
     thinking: content.slice(0, index).trim(),
-    final: content.slice(index + marker.length).trim(),
+    final: content.slice(index).trim(),
   };
 }
 
@@ -489,11 +520,18 @@ async function uploadDocument() {
 
 async function loadSettings() {
   const settings = await request("/api/settings/model");
-  els.baseUrlInput.value = settings.base_url || "https://api.deepseek.com";
-  els.modelInput.value = settings.model || "deepseek-chat";
-  els.apiKeyInput.value = "";
-  els.apiKeyInput.placeholder = settings.configured ? `已配置：${settings.api_key_hint}` : "sk-...";
-  els.settingsStatus.textContent = settings.configured ? `已配置 ${settings.api_key_hint}` : "未配置 API Key，将使用本地演示回复";
+  syncModelSettingsPanel(settings);
+  setValueIfPresent(els.baseUrlInput, settings.base_url || "https://api.deepseek.com");
+  setValueIfPresent(els.modelInput, settings.model || "deepseek-chat");
+  setValueIfPresent(els.apiKeyInput, "");
+  setPlaceholderIfPresent(els.apiKeyInput, settings.configured ? `已配置：${settings.api_key_hint}` : "sk-...");
+  setTextIfPresent(els.settingsStatus, settings.configured ? `已配置 ${settings.api_key_hint}` : "未配置 API Key，将使用本地演示回复");
+}
+
+function syncModelSettingsPanel(settings) {
+  if (els.modelSettings) {
+    els.modelSettings.open = !settings.configured;
+  }
 }
 
 async function saveSettings(event) {
@@ -501,24 +539,29 @@ async function saveSettings(event) {
   const settings = await request("/api/settings/model", {
     method: "POST",
     body: JSON.stringify({
-      api_key: els.apiKeyInput.value,
-      base_url: els.baseUrlInput.value,
-      model: els.modelInput.value,
+      api_key: els.apiKeyInput?.value || "",
+      base_url: els.baseUrlInput?.value || "",
+      model: els.modelInput?.value || "",
     }),
   });
-  els.apiKeyInput.value = "";
-  els.apiKeyInput.placeholder = settings.configured ? `已配置：${settings.api_key_hint}` : "sk-...";
-  els.settingsStatus.textContent = settings.configured ? `已保存 ${settings.api_key_hint}` : "未配置 API Key";
-  setTimeout(() => els.settingsDialog.close(), 450);
+  syncModelSettingsPanel(settings);
+  setValueIfPresent(els.apiKeyInput, "");
+  setPlaceholderIfPresent(els.apiKeyInput, settings.configured ? `已配置：${settings.api_key_hint}` : "sk-...");
+  setTextIfPresent(els.settingsStatus, settings.configured ? `已保存 ${settings.api_key_hint}` : "未配置 API Key");
+  if (els.settingsDialog) {
+    setTimeout(() => els.settingsDialog.close(), 450);
+  }
 }
 
 window.openModelSettings = async function openModelSettings() {
   await loadSettings();
-  if (!els.settingsDialog.open) {
+  if (els.settingsDialog && !els.settingsDialog.open) {
     els.settingsDialog.showModal();
+  } else if (els.modelSettings) {
+    els.modelSettings.open = true;
   }
 };
-on(els.closeSettings, "click", () => els.settingsDialog.close());
+on(els.closeSettings, "click", () => els.settingsDialog?.close());
 on(els.settingsForm, "submit", saveSettings);
 on(els.newChat, "click", () => createConversation());
 on(els.openSidebar, "click", () => els.sidebar.classList.add("open"));
@@ -538,6 +581,7 @@ on(els.promptInput, "keydown", (event) => {
 });
 
 loadConversations().then(async () => {
+  loadSettings();
   setComposerOffset();
   const first = state.conversations[0];
   if (first) {

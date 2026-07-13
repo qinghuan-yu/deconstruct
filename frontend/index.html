@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Decision Arena</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=6" />
+    <link rel="stylesheet" href="/assets/styles.css?v=11" />
   </head>
   <body>
     <div class="shell">
@@ -13,22 +13,23 @@
           <button class="primary-action" id="newChat">开启新对话</button>
         </div>
 
-        <details class="settings-inline" open>
+        <details class="settings-inline" id="modelSettings">
           <summary>模型配置</summary>
-          <form class="settings-form" action="/settings/model-form" method="post">
+          <form class="settings-form" id="settingsForm" action="/settings/model-form" method="post">
             <label>
               <span>API Key</span>
-              <input name="api_key" type="password" autocomplete="off" placeholder="sk-..." />
+              <input id="apiKeyInput" name="api_key" type="password" autocomplete="off" placeholder="sk-..." />
             </label>
             <label>
               <span>Base URL</span>
-              <input name="base_url" autocomplete="off" value="https://api.deepseek.com" />
+              <input id="baseUrlInput" name="base_url" autocomplete="off" value="https://api.deepseek.com" />
             </label>
             <label>
               <span>模型名</span>
-              <input name="model" autocomplete="off" value="deepseek-chat" />
+              <input id="modelInput" name="model" autocomplete="off" value="deepseek-chat" />
             </label>
             <button class="secondary-action" type="submit">保存 Key</button>
+            <div class="settings-status" id="settingsStatus" aria-live="polite"></div>
           </form>
         </details>
 
@@ -62,6 +63,6 @@
       </main>
     </div>
 
-    <script src="/assets/app.js?v=6"></script>
+    <script src="/assets/app.js?v=11"></script>
   </body>
 </html>

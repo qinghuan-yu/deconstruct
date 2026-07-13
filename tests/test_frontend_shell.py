@@ -40,12 +40,36 @@ class FrontendShellTests(unittest.TestCase):
         self.assertIn("documentBlocks", script)
         self.assertIn(".user-attachment-card", styles)
         self.assertIn(".user-text", styles)
+        self.assertIn("width: min(300px, calc(100vw - 48px))", styles)
+        self.assertIn("height: 72px", styles)
+        self.assertIn("display: flex", styles)
 
     def test_markdown_and_scroll_space_handle_long_answers(self):
         script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
         styles = (ROOT / "frontend" / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("#{1,6}", script)
+        self.assertIn("<!-- FINAL_DECISION -->", script)
+        self.assertIn("finalMarkerIndex", script)
+        self.assertIn('"# 决策书："', script)
+        self.assertIn("final: content.slice(index).trim()", script)
         self.assertIn("composerOffset", script)
         self.assertIn("setComposerOffset", script)
         self.assertIn("padding-bottom: calc(var(--composer-offset)", styles)
+
+    def test_model_settings_panel_collapses_when_key_is_configured(self):
+        html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="modelSettings"', html)
+        self.assertIn('id="settingsForm"', html)
+        self.assertIn('id="apiKeyInput"', html)
+        self.assertIn('id="baseUrlInput"', html)
+        self.assertIn('id="modelInput"', html)
+        self.assertIn('id="settingsStatus"', html)
+        self.assertNotIn('<details class="settings-inline" open>', html)
+        self.assertIn("syncModelSettingsPanel", script)
+        self.assertIn("settings.configured", script)
+        self.assertIn("els.modelSettings.open = !settings.configured", script)
+        self.assertIn("setValueIfPresent", script)
+        self.assertIn("setTextIfPresent", script)
