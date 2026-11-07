@@ -66,23 +66,17 @@ class DebateEngineTest(unittest.TestCase):
                 assistant = messages[-1]
                 self.assertEqual(assistant["role"], "assistant")
                 self.assertEqual(assistant["status"], "complete")
-                self.assertIn("<!-- FINAL_DECISION -->", assistant["content"])
+                self.assertNotIn("<!-- FINAL_DECISION -->", assistant["content"])
                 self.assertIn("# 决策书：测试", assistant["content"])
-                self.assertLess(
-                    assistant["content"].index("debate.problem_analyst output"),
-                    assistant["content"].index("<!-- FINAL_DECISION -->"),
-                )
-                self.assertLess(
-                    assistant["content"].index("<!-- FINAL_DECISION -->"),
-                    assistant["content"].index("# 决策书：测试"),
-                )
-                self.assertIn("debate.red_team output", assistant["content"])
-                self.assertIn("debate.evidence_auditor output", assistant["content"])
-                self.assertIn("debate.judge output", assistant["content"])
+                self.assertNotIn("debate.red_team output", assistant["content"])
+                self.assertIn("debate.red_team output", assistant["steps"]["red_team"]["content"])
+                self.assertIn("debate.evidence_auditor output", assistant["steps"]["evidence_auditor"]["content"])
+                self.assertIn("debate.judge output", assistant["steps"]["judge"]["content"])
 
                 events = await store.list_events(conversation["id"], after_seq=0)
                 event_types = [event["type"] for event in events]
-                self.assertEqual(event_types.count("assistant_delta"), 2)
+                self.assertGreaterEqual(event_types.count("assistant_delta"), 1)
+                self.assertLess(event_types.index("debate_step_completed"), event_types.index("assistant_delta"))
                 self.assertIn("debate_step_started", event_types)
                 self.assertIn("debate_step_completed", event_types)
                 self.assertIn("assistant_message_completed", event_types)
@@ -107,8 +101,8 @@ class DebateEngineTest(unittest.TestCase):
 
                 events = await store.list_events(conversation["id"], after_seq=0)
                 completed = [event for event in events if event["type"] == "debate_step_completed"]
-                self.assertEqual([event["payload"]["mode"] for event in completed], EXPECTED_AUDIT_MODES)
-                self.assertTrue(all(event["payload"]["content"] for event in completed))
+                self.assertCountEqual([event["payload"]["mode"] for event in completed], EXPECTED_AUDIT_MODES)
+                self.assertTrue(all(event["payload"]["content"] for event in completed if event["payload"]["key"] != "final_writer"))
 
         asyncio.run(scenario())
 

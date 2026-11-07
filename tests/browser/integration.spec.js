@@ -1,0 +1,33 @@
+const { test, expect } = require('@playwright/test');
+
+test('real HTTP and SSE support upload, quick replies, reload and cancellation', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.locator('#connectionStatus')).not.toHaveText('正在连接');
+  await page.locator('#newChat').click();
+  await page.getByRole('button', { name: '快速问答', exact: true }).click();
+  await page.locator('#documentInput').setInputFiles({ name: '预算.txt', mimeType: 'text/plain', buffer: Buffer.from('预算 200 元，本周有五个晚上，每晚 30 分钟。') });
+  await expect(page.locator('.attachment-card')).toContainText('预算.txt');
+  await page.locator('#promptInput').fill('正文里的 [文档：例子] 保持原样，请查看附件预算。');
+  await page.locator('#sendButton').click();
+  await expect(page.locator('.message.assistant')).toBeVisible();
+  await expect(page.locator('.message.assistant')).not.toHaveClass(/streaming/, { timeout: 15000 });
+  await expect(page.locator('.user-text')).toContainText('[文档：例子]');
+  await expect(page.locator('.user-attachment-card')).toContainText('预算.txt');
+  const answer = await page.locator('.final-answer').innerText();
+  expect(answer).toContain('本地演示回复');
+  await page.reload();
+  await expect(page.locator('.final-answer')).toHaveText(answer);
+  await expect(page.locator('.message.assistant')).toHaveCount(1);
+  await page.getByRole('button', { name: '深度审计', exact: true }).click();
+  await page.locator('#promptInput').fill('再从不同角度审计这个安排。');
+  await page.locator('#sendButton').click();
+  await expect(page.locator('.audit-label').last()).toContainText('方案分析员');
+  await page.getByRole('button', { name: '停止生成', exact: true }).click();
+  await expect(page.locator('.message-status').last()).toContainText('已停止');
+  await page.reload();
+  await expect(page.locator('.message-status').last()).toContainText('已停止');
+  expect(errors).toEqual([]);
+  await page.locator('.conversation-item.active .delete-conversation').click();
+});

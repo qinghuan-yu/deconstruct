@@ -2,11 +2,15 @@ import re
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from xml.etree import ElementTree
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
+from xml.etree.ElementTree import ParseError
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx", ".doc"}
 MAX_EXTRACTED_CHARS = 120_000
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+MAX_XML_BYTES = 16 * 1024 * 1024
 
 
 class DocumentParseError(ValueError):
@@ -14,7 +18,9 @@ class DocumentParseError(ValueError):
 
 
 def extract_document_text(filename, content):
-    safe_name = Path(filename or "document").name
+    if len(content.encode("utf-8") if isinstance(content, str) else content) > MAX_UPLOAD_BYTES:
+        raise DocumentParseError("文件不能超过 8 MB。")
+    safe_name = Path((filename or "document").replace("\\", "/")).name
     extension = Path(safe_name).suffix.lower()
     if extension not in SUPPORTED_EXTENSIONS:
         supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
@@ -36,6 +42,7 @@ def extract_document_text(filename, content):
         "extension": extension.lstrip("."),
         "text": text[:MAX_EXTRACTED_CHARS],
         "truncated": len(text) > MAX_EXTRACTED_CHARS,
+        "warning": "旧版 DOC 仅能尝试提取文字，建议转换为 DOCX 后上传。" if extension == ".doc" else "",
     }
 
 
@@ -53,11 +60,19 @@ def _decode_text(content):
 def _extract_docx_text(content):
     try:
         with zipfile.ZipFile(BytesIO(content)) as archive:
+            info = archive.getinfo("word/document.xml")
+            if info.file_size > MAX_XML_BYTES or info.file_size / max(info.compress_size, 1) > 200:
+                raise DocumentParseError("DOCX 解压后过大或压缩比异常。")
+            if len(archive.infolist()) > 2000 or sum(item.file_size for item in archive.infolist()) > 64 * 1024 * 1024:
+                raise DocumentParseError("DOCX 内容过大。")
             xml = archive.read("word/document.xml")
-    except (KeyError, zipfile.BadZipFile) as exc:
+    except (KeyError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
         raise DocumentParseError("Invalid docx document") from exc
 
-    root = ElementTree.fromstring(xml)
+    try:
+        root = ElementTree.fromstring(xml, forbid_dtd=True)
+    except (ParseError, DefusedXmlException) as exc:
+        raise DocumentParseError("DOCX XML 无效或包含不支持的实体声明。") from exc
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     paragraphs = []
     for paragraph in root.iter(f"{namespace}p"):

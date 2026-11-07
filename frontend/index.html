@@ -1,68 +1,74 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Decision Arena</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=11" />
-  </head>
-  <body>
-    <div class="shell">
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-actions">
-          <button class="primary-action" id="newChat">开启新对话</button>
-        </div>
-
-        <details class="settings-inline" id="modelSettings">
-          <summary>模型配置</summary>
-          <form class="settings-form" id="settingsForm" action="/settings/model-form" method="post">
-            <label>
-              <span>API Key</span>
-              <input id="apiKeyInput" name="api_key" type="password" autocomplete="off" placeholder="sk-..." />
-            </label>
-            <label>
-              <span>Base URL</span>
-              <input id="baseUrlInput" name="base_url" autocomplete="off" value="https://api.deepseek.com" />
-            </label>
-            <label>
-              <span>模型名</span>
-              <input id="modelInput" name="model" autocomplete="off" value="deepseek-chat" />
-            </label>
-            <button class="secondary-action" type="submit">保存 Key</button>
-            <div class="settings-status" id="settingsStatus" aria-live="polite"></div>
-          </form>
-        </details>
-
-        <nav class="conversation-list" id="conversationList"></nav>
-      </aside>
-
-      <main class="main">
-        <header class="mobile-bar">
-          <button class="icon-button" id="openSidebar" title="打开侧栏">菜单</button>
-          <span>历史对话</span>
-        </header>
-
-        <section class="chat" id="chat">
-          <div class="messages" id="messages"></div>
-        </section>
-
-        <form class="composer" id="composer">
-          <div class="attachment-tray" id="attachmentTray"></div>
-          <textarea id="promptInput" rows="1" placeholder="输入你的决策问题，Enter 发送，Shift + Enter 换行"></textarea>
-          <div class="composer-footer">
-            <label class="upload-button" title="上传 docx、doc、txt、md 文档" aria-label="上传文档">
-              <input id="documentInput" type="file" accept=".docx,.doc,.txt,.md" />
-              <svg class="paperclip-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M21.4 11.1 12 20.5a6 6 0 0 1-8.5-8.5l9.7-9.7a4.2 4.2 0 0 1 6 6l-9.8 9.8a2.4 2.4 0 0 1-3.4-3.4l8.7-8.7" />
-              </svg>
-            </label>
-            <button class="send-button" id="sendButton" type="submit" title="发送">↑</button>
-          </div>
-          <div class="upload-status" id="uploadStatus" aria-live="polite"></div>
-        </form>
-      </main>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#fbfbf9" />
+  <meta name="description" content="把问题、依据与行动整理成一份清楚的决策书。" />
+  <title>Decision Arena · 决策手记</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/assets/styles.css?v=15" />
+  <script src="/assets/vendor/marked.js" defer></script>
+  <script src="/assets/vendor/purify.js" defer></script>
+  <script src="/assets/app.js?v=15" defer></script>
+</head>
+<body class="is-empty">
+  <a class="skip-link" href="#promptInput">跳转到提问</a>
+  <header class="masthead page-width" id="masthead">
+    <div class="brand"><span class="brand-name">Decision <span>Arena</span></span></div>
+    <div class="header-actions">
+      <span id="connectionStatus" class="connection-status" role="status" aria-live="polite">正在连接</span>
+      <button id="newChat" class="text-button" type="button">开启新对话 <span aria-hidden="true">＋</span></button>
+      <button id="openSidebar" class="text-button mobile-only" type="button" aria-controls="sidebar" aria-expanded="false">历史对话</button>
     </div>
-
-    <script src="/assets/app.js?v=11"></script>
-  </body>
+  </header>
+  <div class="workspace page-grid page-width">
+    <main id="mainContent">
+      <section class="empty-state" id="emptyState">
+        <h1>新的决策对话</h1>
+      </section>
+      <section class="chat" id="chat" aria-label="决策对话"><div id="messages" class="messages"></div></section>
+      <div class="composer-dock" id="composerDock">
+        <div class="page-grid page-width">
+          <form class="composer" id="composer">
+            <label class="composer-label" for="promptInput" id="composerLabel">你的问题</label>
+            <div id="attachmentTray" class="attachment-tray"></div>
+            <textarea id="promptInput" rows="2" maxlength="16000" placeholder="写下问题，或添加文档。" aria-describedby="composerHint composerError"></textarea>
+            <div class="composer-footer">
+              <div class="mode-switch" role="group" aria-label="回答方式">
+                <button type="button" data-mode="expert" aria-pressed="true" title="多个视角审计后生成决策书">深度审计</button>
+                <button type="button" data-mode="quick" aria-pressed="false" title="直接给出简明建议">快速问答</button>
+              </div>
+              <div class="composer-actions">
+                <label class="upload-button" for="documentInput">添加文档<input id="documentInput" type="file" accept=".docx,.doc,.txt,.md" /></label>
+                <button id="sendButton" class="send-button" type="submit" disabled>发送 <span aria-hidden="true">↗</span></button>
+              </div>
+            </div>
+            <div class="composer-notes"><span id="composerHint">Enter 发送，Shift + Enter 换行</span><span id="uploadStatus" role="status"></span></div>
+            <p id="composerError" class="error-message" role="alert" hidden></p>
+          </form>
+        </div>
+      </div>
+    </main>
+    <aside class="sidebar" id="sidebar" aria-label="历史对话与模型配置">
+      <div class="sidebar-heading"><h2>历史对话</h2><button id="closeSidebar" type="button" class="text-button mobile-only" aria-label="关闭侧栏">关闭</button></div>
+      <button id="mobileNewChat" type="button" class="text-button mobile-only">开启新对话 ＋</button>
+      <nav id="conversationList" class="conversation-list" aria-label="历史对话"></nav>
+      <details class="settings-inline" id="modelSettings">
+        <summary>模型配置 <span id="modelBadge">未配置</span></summary>
+        <form class="settings-form" id="settingsForm" action="/settings/model-form" method="post">
+          <label for="apiKeyInput">API Key</label>
+          <input id="apiKeyInput" name="api_key" type="password" autocomplete="off" placeholder="sk-..." />
+          <label for="baseUrlInput">Base URL</label>
+          <input id="baseUrlInput" name="base_url" type="url" autocomplete="url" value="https://api.deepseek.com" required />
+          <label for="modelInput">模型名</label>
+          <input id="modelInput" name="model" value="deepseek-chat" required />
+          <button class="outline-button" type="submit">保存配置</button>
+          <p class="settings-status" id="settingsStatus" role="status"></p>
+        </form>
+      </details>
+    </aside>
+  </div>
+  <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="关闭历史对话" tabindex="-1"></button>
+</body>
 </html>

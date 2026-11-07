@@ -1,4 +1,9 @@
 from dataclasses import dataclass
+import asyncio
+import time
+
+from .context import clip
+from .streaming import MessageStream
 
 
 FINAL_DECISION_MARKER = "<!-- FINAL_DECISION -->"
@@ -60,12 +65,12 @@ class DebateEngine:
         self.store = store
         self.provider = provider
 
-    async def run(self, conversation_id, assistant_message_id, history):
+    async def run(self, conversation_id, assistant_message_id, history, documents=""):
         conversation_context = self._format_conversation_context(history)
 
         step_outputs = {}
-        for step in AUDIT_STEPS:
-            output = await self._run_step(
+        async def audit(step, previous, sources=""):
+            return await self._run_step(
                 conversation_id,
                 assistant_message_id,
                 key=step.key,
@@ -80,10 +85,20 @@ class DebateEngine:
                     "- 若该观察会改变当前行动、试运行范围或决策门槛，写明影响；\n"
                     "- 若只属于背景信息或暂无法影响决策，明确写“暂无直接决策影响”。\n\n"
                     f"对话上下文：\n{conversation_context}\n\n"
-                    f"前序审计结果：\n{self._format_step_outputs(step_outputs)}"
+                    f"前序审计结果：\n{self._format_step_outputs(previous)}\n\n"
+                    f"{sources}\n\n分析限于与当前决策有关的内容，控制在 600 字以内。"
                 ),
             )
-            step_outputs[step.key] = output
+
+        first = AUDIT_STEPS[0]
+        step_outputs[first.key] = await audit(first, {}, documents)
+        # 只并行独立视角；证据审计在两者完成后交叉核查。
+        async with asyncio.TaskGroup() as group:
+            red = group.create_task(audit(AUDIT_STEPS[1], dict(step_outputs)))
+            execution = group.create_task(audit(AUDIT_STEPS[2], dict(step_outputs)))
+        step_outputs[AUDIT_STEPS[1].key] = red.result()
+        step_outputs[AUDIT_STEPS[2].key] = execution.result()
+        step_outputs[AUDIT_STEPS[3].key] = await audit(AUDIT_STEPS[3], step_outputs)
 
         ledger = await self._run_step(
             conversation_id,
@@ -112,6 +127,7 @@ class DebateEngine:
             prompt=(
                 "你是决策裁判。你的输出不给最终用户直接阅读，而是交给最终编辑器。\n\n"
                 "只输出结构化决策台账，不写散文，不写“保留理由”等孤立标题。\n\n"
+                "最多保留 6 条会改变行动的条目，每条最多 100 字，合并重复事项。\n\n"
                 "每条内容必须包含：\n"
                 "- id\n"
                 "- 类型：事实 / 推断 / 建议 / 未解决异议\n"
@@ -134,8 +150,6 @@ class DebateEngine:
         )
         step_outputs["judge"] = judge
 
-        await self._publish_thinking_summary(conversation_id, assistant_message_id, step_outputs)
-
         await self._run_step(
             conversation_id,
             assistant_message_id,
@@ -146,74 +160,28 @@ class DebateEngine:
             publish=True,
         )
 
-        await self.store.update_message_status(assistant_message_id, "complete")
-        await self.store.add_event(
-            conversation_id,
-            "assistant_message_completed",
-            {"message_id": assistant_message_id, "mode": "expert"},
-            message_id=assistant_message_id,
-        )
-
     async def _run_step(self, conversation_id, assistant_message_id, key, title, mode, prompt, publish=False):
-        await self.store.add_event(
-            conversation_id,
-            "debate_step_started",
-            {"key": key, "title": title, "mode": mode},
-            message_id=assistant_message_id,
-        )
+        started = time.monotonic()
+        step = {"title": title, "mode": mode, "status": "running", "started_at": time.time()}
+        await self.store.save_step(conversation_id, assistant_message_id, key, step)
         chunks = []
-        async for chunk in self.provider.stream_reply([{"role": "user", "content": prompt}], mode):
-            chunks.append(chunk)
-        content = "".join(chunks).strip()
-
         if publish:
-            section = self._section_for(key, title, content)
-            await self.store.append_message(assistant_message_id, section)
-            await self.store.add_event(
-                conversation_id,
-                "assistant_delta",
-                {"delta": section},
-                message_id=assistant_message_id,
-            )
-
-        await self.store.add_event(
-            conversation_id,
-            "debate_step_completed",
-            {"key": key, "title": title, "mode": mode, "content": content},
-            message_id=assistant_message_id,
-        )
+            async with MessageStream(self.store, conversation_id, assistant_message_id) as stream:
+                async for chunk in self.provider.stream_reply([{"role": "user", "content": prompt}], mode):
+                    chunks.append(chunk)
+                    await stream.write(chunk)
+        else:
+            async for chunk in self.provider.stream_reply([{"role": "user", "content": prompt}], mode):
+                chunks.append(chunk)
+        content = "".join(chunks).strip()
+        if not content:
+            raise ValueError("模型没有返回正文")
+        step.update(status="complete", content="" if publish else content,
+                    elapsed_seconds=round(time.monotonic() - started, 2),
+                    input_chars=len(prompt), output_chars=len(content),
+                    usage=getattr(self.provider, "usage", {}))
+        await self.store.save_step(conversation_id, assistant_message_id, key, step)
         return content
-
-    async def _publish_thinking_summary(self, conversation_id, assistant_message_id, step_outputs):
-        section_titles = {
-            "problem_analyst": "方案分析员",
-            "red_team": "红队质询员",
-            "execution_evaluator": "执行评估员",
-            "evidence_auditor": "证据审计员",
-            "decision_ledger": "决策证据链",
-            "judge": "裁判台账",
-        }
-        sections = [
-            self._section_for(key, section_titles[key], content)
-            for key, content in step_outputs.items()
-            if key in section_titles and content
-        ]
-        if not sections:
-            return
-        content = "".join(sections)
-        await self.store.append_message(assistant_message_id, content)
-        await self.store.add_event(
-            conversation_id,
-            "assistant_delta",
-            {"delta": content},
-            message_id=assistant_message_id,
-        )
-
-    def _section_for(self, key, title, content):
-        if key == "final_writer":
-            final_content = content if content.startswith("#") else f"# 决策书\n\n{content}"
-            return f"\n\n{FINAL_DECISION_MARKER}\n\n{final_content}"
-        return f"\n### {title}\n\n{content}\n"
 
     def _format_conversation_context(self, history):
         lines = []
@@ -227,7 +195,7 @@ class DebateEngine:
     def _format_step_outputs(self, outputs):
         if not outputs:
             return "No prior audit output."
-        return "\n\n".join(f"### {key}\n{value}" for key, value in outputs.items())
+        return "\n\n".join(f"### {key}\n{clip(value, 4000)}" for key, value in outputs.items())
 
     def _final_writer_prompt(self, conversation_context, step_outputs):
         return (
@@ -247,6 +215,8 @@ class DebateEngine:
             "5. 禁止擅自引入方案自动关闭、书面确认风险、第三方监督、目标分数上调、采购限制，"
             "以及“致命”“必然失败”等绝对化机制或措辞。\n"
             "6. 数字、期限和门槛仅在帮助执行时出现；无来源时说明是建议起点，并允许根据复盘调整。\n\n"
+            "7. 核对行动表的总时间与总预算，不得超过用户上限；复盘、准备、总结也计入预算。"
+            "产出估算必须按实际分配给该任务的天数和时间计算，不能把整理时间也算成执行时间。\n\n"
             "严格按以下结构输出，不能省略任何一级标题：\n\n"
             "# 决策书：<主题>\n\n"
             "## 结论\n"
